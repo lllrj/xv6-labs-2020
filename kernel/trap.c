@@ -65,6 +65,20 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 15 || r_scause() == 13){
+    uint64 fault_va = r_stval();  // 产生页面错误的虚拟地址
+    char* pa;                     // 分配的物理地址
+    if(PGROUNDDOWN(p->trapframe->sp) < fault_va && fault_va < p->sz &&
+      (pa = kalloc()) != 0) {
+        memset(pa, 0, PGSIZE);
+        if(mappages(p->pagetable, PGROUNDDOWN(fault_va), PGSIZE, (uint64)pa, PTE_R | PTE_W | PTE_X | PTE_U) != 0) {
+          kfree(pa);
+          p->killed = 1;
+        }
+    } else {
+      // printf("usertrap(): out of memory!\n");
+      p->killed = 1;
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
@@ -144,7 +158,7 @@ kerneltrap()
     panic("kerneltrap: interrupts enabled");
 
   if((which_dev = devintr()) == 0){
-    printf("scause %p\n", scause);
+    printf("scause %p\n", scause);// error
     printf("sepc=%p stval=%p\n", r_sepc(), r_stval());
     panic("kerneltrap");
   }
