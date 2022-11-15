@@ -8,6 +8,7 @@
 #include "spinlock.h"
 #include "riscv.h"
 #include "defs.h"
+uint page_ref[(PHYSTOP - KERNBASE) / PGSIZE];
 
 void freerange(void *pa_start, void *pa_end);
 
@@ -52,8 +53,12 @@ kfree(void *pa)
     panic("kfree");
 
   // Fill with junk to catch dangling refs.
+  if(page_ref[COW_INDEX(pa)] > 1){
+    page_ref[COW_INDEX(pa)]--;
+    return;
+  }
+  //page_ref[COW_INDEX(pa)] = 0;
   memset(pa, 1, PGSIZE);
-
   r = (struct run*)pa;
 
   acquire(&kmem.lock);
@@ -76,7 +81,32 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+    page_ref[COW_INDEX(r)] = 1;
+  }
   return (void*)r;
+}
+
+int cow_alloc(pagetable_t pag, uint64 va){
+  va = PGROUNDDOWN(va);
+  if(va >= MAXVA)return 0;
+  pte_t *pte;
+  if((pte = walk(pag, va, 0)) == 0)return 0;
+  uint64 pa = PTE2PA(*pte);
+  if(pa == 0) return 0;
+  uint64 flags = PTE_FLAGS(*pte);
+  if(PTE_COW & flags){
+    uint64 mem = (uint64)kalloc();
+    if (mem == 0) return 0;
+    memmove((char*)mem, (char*)pa, PGSIZE);
+    uvmunmap(pag, va, 1, 1);
+    flags = (flags | PTE_W) & ~PTE_COW;
+    //*pte = PA2PTE(mem) | flags;
+    if (mappages(pag, va, PGSIZE, mem, flags) != 0) {
+      kfree((void*)mem);
+      return 0;
+    }
+  }
+  return 1;
 }

@@ -8,7 +8,6 @@ r_mhartid()
 }
 
 // Machine Status Register, mstatus
-
 #define MSTATUS_MPP_MASK (3L << 11) // previous mode.
 #define MSTATUS_MPP_M (3L << 11)
 #define MSTATUS_MPP_S (1L << 11)
@@ -352,3 +351,6 @@ sfence_vma()
 
 typedef uint64 pte_t;
 typedef uint64 *pagetable_t; // 512 PTEs
+
+#define PTE_COW (1L << 8)
+#define COW_INDEX(pa) (((uint64)(pa) - KERNBASE) >> 12)
